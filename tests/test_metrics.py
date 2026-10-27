@@ -15,6 +15,7 @@ import yaml
 from redisbench_admin.run.common import merge_default_and_config_metrics
 from redisbench_admin.run.metrics import (
     BENCHMARK_CPU_STATS_GLOBAL,
+    collect_info_metrics,
     collect_redis_metrics,
     collect_search_and_bigredis_metrics,
     extract_results_table,
@@ -383,3 +384,71 @@ def test_collect_search_and_bigredis_metrics_multi_shard_sums():
         "search_memory_search_used_memory_indexes": 300,
         "search_disk_search_disk_usage": 9000,
     }
+
+
+def test_collect_info_metrics_returns_the_requested_fields():
+    conn = _mock_conn(
+        {
+            "search_vector_index": {
+                "search_hnsw_direct_main_thread_insertions": 12,
+                "search_tiered_index_frontend_buffer_size": 3,
+                # Not requested, so it must not appear.
+                "search_used_memory_vector_index": 4096,
+            }
+        }
+    )
+    out = collect_info_metrics(
+        [conn],
+        [
+            {
+                "section": "search_vector_index",
+                "fields": [
+                    "search_hnsw_direct_main_thread_insertions",
+                    "search_tiered_index_frontend_buffer_size",
+                ],
+            }
+        ],
+    )
+    assert out == {
+        "search_vector_index_search_hnsw_direct_main_thread_insertions": 12,
+        "search_vector_index_search_tiered_index_frontend_buffer_size": 3,
+    }
+
+
+def test_collect_info_metrics_without_config_collects_nothing():
+    conn = _mock_conn({"search_vector_index": {"search_x": 1}})
+    assert collect_info_metrics([conn], None) == {}
+    assert collect_info_metrics([conn], []) == {}
+    conn.info.assert_not_called()
+
+
+def test_collect_info_metrics_skips_malformed_entries():
+    conn = _mock_conn({"search_vector_index": {"search_x": 1}})
+    out = collect_info_metrics(
+        [conn],
+        [
+            "not-a-dict",
+            {"section": "search_vector_index"},
+            {"fields": ["search_x"]},
+            {"section": "search_vector_index", "fields": "search_x"},
+            {"section": "search_vector_index", "fields": ["search_x"]},
+        ],
+    )
+    assert out == {"search_vector_index_search_x": 1}
+
+
+def test_collect_info_metrics_missing_section_is_absent():
+    conn = _mock_conn({})
+    out = collect_info_metrics(
+        [conn], [{"section": "search_vector_index", "fields": ["search_x"]}]
+    )
+    assert out == {}
+
+
+def test_collect_info_metrics_multi_shard_sums():
+    conn1 = _mock_conn({"search_vector_index": {"search_x": 5}})
+    conn2 = _mock_conn({"search_vector_index": {"search_x": 7}})
+    out = collect_info_metrics(
+        [conn1, conn2], [{"section": "search_vector_index", "fields": ["search_x"]}]
+    )
+    assert out == {"search_vector_index_search_x": 12}

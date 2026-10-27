@@ -270,6 +270,47 @@ def collect_search_and_bigredis_metrics(redis_conns):
     return merged
 
 
+def collect_info_metrics(redis_conns, info_metrics):
+    """Read the INFO fields a benchmark definition asks for with `info_metrics`.
+
+    `info_metrics` is a list of {"section": <INFO section>, "fields": [<field>, ...]}
+    entries, for example the vector index counters of the RediSearch module:
+
+        info_metrics:
+          - section: search_vector_index
+            fields: [search_hnsw_direct_main_thread_insertions]
+
+    Values are summed across shards, like the other end of run INFO metrics, and
+    returned as {"<section>_<field>": value}. Malformed entries are skipped with a
+    warning, and a missing section or field is simply absent from the result, so a
+    benchmark never fails because of this measurement.
+    """
+    if not info_metrics:
+        return {}
+    section_filter = {}
+    for entry in info_metrics:
+        section = entry.get("section") if isinstance(entry, dict) else None
+        fields = entry.get("fields") if isinstance(entry, dict) else None
+        if (
+            not isinstance(section, str)
+            or not isinstance(fields, list)
+            or not all(isinstance(field, str) for field in fields)
+        ):
+            logging.warning(
+                "Ignoring malformed info_metrics entry (expected a section and a list of fields): {}".format(
+                    entry
+                )
+            )
+            continue
+        section_filter.setdefault(section, []).extend(fields)
+    if not section_filter:
+        return {}
+    _, _, kv_overall = collect_redis_metrics(
+        redis_conns, list(section_filter), section_filter
+    )
+    return kv_overall
+
+
 BENCHMARK_RUNNING_GLOBAL = False
 BENCHMARK_CPU_STATS_GLOBAL = {}
 
