@@ -266,9 +266,12 @@ info_metrics:
 
 - `section` is the `INFO` section as the server reports it. A module prefixes both its
   sections and its fields with its name, as in `INFO search_vector_index`.
-- The metric name is `<section>_<field>`, and values are summed across shards.
+- The metric name is `<section>_<field>`, and numeric scalar values are summed across
+  shards (a dict-valued field is flattened per shard instead, as for the other INFO
+  metrics).
 - Only numeric fields are collected. A section or field the server does not report is
-  left out, and a malformed entry is ignored with a warning, so this never fails a run.
+  left out, and a malformed entry, a value that is not a list, or an error while reading `INFO` is
+  logged as a warning, so this never fails a run.
 - The values are read after the client tool finished, so they describe the whole run
   (counters accumulate from the start of the server).
 

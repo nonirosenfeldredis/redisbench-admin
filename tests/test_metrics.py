@@ -452,3 +452,19 @@ def test_collect_info_metrics_multi_shard_sums():
         [conn1, conn2], [{"section": "search_vector_index", "fields": ["search_x"]}]
     )
     assert out == {"search_vector_index_search_x": 12}
+
+
+def test_collect_info_metrics_ignores_a_value_that_is_not_a_list():
+    conn = _mock_conn({"search_vector_index": {"search_x": 1}})
+    assert collect_info_metrics([conn], 5) == {}
+    assert collect_info_metrics([conn], {"section": "search_vector_index"}) == {}
+    conn.info.assert_not_called()
+
+
+def test_collect_info_metrics_survives_an_info_error():
+    conn = MagicMock()
+    conn.info.side_effect = redis.exceptions.TimeoutError("timed out")
+    out = collect_info_metrics(
+        [conn], [{"section": "search_vector_index", "fields": ["search_x"]}]
+    )
+    assert out == {}

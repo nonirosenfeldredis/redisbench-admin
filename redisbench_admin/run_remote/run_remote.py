@@ -1170,18 +1170,10 @@ def run_remote_command_logic(args, project_name, project_version):
                                             )
                                         )
 
-                                    info_metrics = {}
-                                    try:
-                                        info_metrics = collect_info_metrics(
-                                            redis_conns,
-                                            benchmark_config.get("info_metrics"),
-                                        )
-                                    except Exception as e:
-                                        logging.warning(
-                                            "Unable to collect info_metrics: {}".format(
-                                                e
-                                            )
-                                        )
+                                    info_metrics = collect_info_metrics(
+                                        redis_conns,
+                                        benchmark_config.get("info_metrics"),
+                                    )
                                     if info_metrics:
                                         logging.info(
                                             "INFO metrics: {}".format(info_metrics)

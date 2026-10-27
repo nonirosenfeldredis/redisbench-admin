@@ -280,12 +280,20 @@ def collect_info_metrics(redis_conns, info_metrics):
           - section: search_vector_index
             fields: [search_hnsw_direct_main_thread_insertions]
 
-    Values are summed across shards, like the other end of run INFO metrics, and
-    returned as {"<section>_<field>": value}. Malformed entries are skipped with a
-    warning, and a missing section or field is simply absent from the result, so a
-    benchmark never fails because of this measurement.
+    Numeric scalar values are summed across shards, like the other end of run INFO
+    metrics, and returned as {"<section>_<field>": value}. Malformed entries are
+    skipped with a warning, a missing section or field is simply absent from the
+    result, and any error while reading INFO is logged and yields {}, so a benchmark
+    never fails because of this measurement.
     """
     if not info_metrics:
+        return {}
+    if not isinstance(info_metrics, list):
+        logging.warning(
+            "Ignoring info_metrics: expected a list of section and fields entries, got {}".format(
+                type(info_metrics).__name__
+            )
+        )
         return {}
     section_filter = {}
     for entry in info_metrics:
@@ -305,9 +313,13 @@ def collect_info_metrics(redis_conns, info_metrics):
         section_filter.setdefault(section, []).extend(fields)
     if not section_filter:
         return {}
-    _, _, kv_overall = collect_redis_metrics(
-        redis_conns, list(section_filter), section_filter
-    )
+    try:
+        _, _, kv_overall = collect_redis_metrics(
+            redis_conns, list(section_filter), section_filter
+        )
+    except Exception as e:
+        logging.warning("Unable to collect info_metrics: {}".format(e))
+        return {}
     return kv_overall
 
 
