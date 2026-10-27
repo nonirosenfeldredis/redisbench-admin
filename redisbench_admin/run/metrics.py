@@ -283,8 +283,9 @@ def collect_info_metrics(redis_conns, info_metrics):
     Numeric scalar values are summed across shards, like the other end of run INFO
     metrics, and returned as {"<section>_<field>": value}. Malformed entries are
     skipped with a warning, a missing section or field is simply absent from the
-    result, and any error while reading INFO is logged and yields {}, so a benchmark
-    never fails because of this measurement.
+    result, and an error while reading INFO is logged, so a benchmark never fails
+    because of this measurement. When a shard fails, the shards that answered are
+    still reported.
     """
     if not info_metrics:
         return {}
@@ -313,13 +314,24 @@ def collect_info_metrics(redis_conns, info_metrics):
         section_filter.setdefault(section, []).extend(fields)
     if not section_filter:
         return {}
+    sections = list(section_filter)
     try:
-        _, _, kv_overall = collect_redis_metrics(
-            redis_conns, list(section_filter), section_filter
-        )
+        _, _, kv_overall = collect_redis_metrics(redis_conns, sections, section_filter)
+        return kv_overall
     except Exception as e:
         logging.warning("Unable to collect info_metrics: {}".format(e))
+    if len(redis_conns) < 2:
         return {}
+    # One shard failed. Read the shards one by one, so the others still report.
+    kv_overall = {}
+    for conn in redis_conns:
+        try:
+            _, _, kv_shard = collect_redis_metrics([conn], sections, section_filter)
+        except Exception as e:
+            logging.warning("Unable to collect info_metrics from a shard: {}".format(e))
+            continue
+        for k, v in kv_shard.items():
+            kv_overall[k] = kv_overall.get(k, 0) + v
     return kv_overall
 
 

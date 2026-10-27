@@ -437,6 +437,12 @@ def test_collect_info_metrics_skips_malformed_entries():
     assert out == {"search_vector_index_search_x": 1}
 
 
+def test_collect_info_metrics_only_malformed_entries_collects_nothing():
+    conn = _mock_conn({"search_vector_index": {"search_x": 1}})
+    assert collect_info_metrics([conn], ["not-a-dict", {"section": 1}]) == {}
+    conn.info.assert_not_called()
+
+
 def test_collect_info_metrics_missing_section_is_absent():
     conn = _mock_conn({})
     out = collect_info_metrics(
@@ -459,6 +465,30 @@ def test_collect_info_metrics_ignores_a_value_that_is_not_a_list():
     assert collect_info_metrics([conn], 5) == {}
     assert collect_info_metrics([conn], {"section": "search_vector_index"}) == {}
     conn.info.assert_not_called()
+
+
+def test_collect_info_metrics_keeps_the_shards_that_answer():
+    conn1 = _mock_conn({"search_vector_index": {"search_x": 5}})
+    slow = MagicMock()
+    slow.info.side_effect = redis.exceptions.TimeoutError("timed out")
+    conn3 = _mock_conn({"search_vector_index": {"search_x": 7}})
+    out = collect_info_metrics(
+        [conn1, slow, conn3],
+        [{"section": "search_vector_index", "fields": ["search_x"]}],
+    )
+    assert out == {"search_vector_index_search_x": 12}
+
+
+def test_collect_info_metrics_all_shards_failing_yields_nothing():
+    conns = []
+    for _ in range(2):
+        conn = MagicMock()
+        conn.info.side_effect = redis.exceptions.TimeoutError("timed out")
+        conns.append(conn)
+    out = collect_info_metrics(
+        conns, [{"section": "search_vector_index", "fields": ["search_x"]}]
+    )
+    assert out == {}
 
 
 def test_collect_info_metrics_survives_an_info_error():

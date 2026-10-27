@@ -271,7 +271,8 @@ info_metrics:
   metrics).
 - Only numeric fields are collected. A section or field the server does not report is
   left out, and a malformed entry, a value that is not a list, or an error while reading `INFO` is
-  logged as a warning, so this never fails a run.
+  logged as a warning, so this never fails a run. If one shard of a cluster fails to
+  answer, the values of the other shards are still reported.
 - The values are read after the client tool finished, so they describe the whole run
   (counters accumulate from the start of the server).
 
