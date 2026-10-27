@@ -498,3 +498,14 @@ def test_collect_info_metrics_survives_an_info_error():
         [conn], [{"section": "search_vector_index", "fields": ["search_x"]}]
     )
     assert out == {}
+
+
+def test_collect_redis_metrics_ignore_shard_errors():
+    ok = _mock_conn({"memory": {"used_memory": 5}})
+    slow = MagicMock()
+    slow.info.side_effect = redis.exceptions.TimeoutError("timed out")
+    _, _, kv = collect_redis_metrics([ok, slow], ["memory"], ignore_shard_errors=True)
+    assert kv == {"memory_used_memory": 5}
+    # Without the flag only a ConnectionError is tolerated, as before.
+    with pytest.raises(redis.exceptions.TimeoutError):
+        collect_redis_metrics([ok, slow], ["memory"])

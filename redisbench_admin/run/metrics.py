@@ -115,7 +115,14 @@ def collect_redis_metrics(
     redis_conns,
     sections=["memory", "cpu", "commandstats", "latencystats"],
     section_filter=None,
+    ignore_shard_errors=False,
 ):
+    """Read the INFO sections of every connection and sum them across shards.
+
+    With `ignore_shard_errors` any error while reading a section from a shard is
+    logged and that section is left out for that shard, instead of only the
+    ConnectionError, so the other shards still report.
+    """
     start_time = dt.datetime.utcnow()
     start_time_ms = int((start_time - dt.datetime(1970, 1, 1)).total_seconds() * 1000)
     res = []
@@ -152,6 +159,12 @@ def collect_redis_metrics(
             except redis.exceptions.ConnectionError as e:
                 logging.warning(
                     f"Unable to collect section {section} from redis. error: {e.__str__}"
+                )
+            except Exception as e:
+                if not ignore_shard_errors:
+                    raise
+                logging.warning(
+                    f"Unable to collect section {section} from shard {conn_n + 1}. error: {e}"
                 )
 
         res.append(conn_res)
@@ -314,24 +327,9 @@ def collect_info_metrics(redis_conns, info_metrics):
         section_filter.setdefault(section, []).extend(fields)
     if not section_filter:
         return {}
-    sections = list(section_filter)
-    try:
-        _, _, kv_overall = collect_redis_metrics(redis_conns, sections, section_filter)
-        return kv_overall
-    except Exception as e:
-        logging.warning("Unable to collect info_metrics: {}".format(e))
-    if len(redis_conns) < 2:
-        return {}
-    # One shard failed. Read the shards one by one, so the others still report.
-    kv_overall = {}
-    for conn in redis_conns:
-        try:
-            _, _, kv_shard = collect_redis_metrics([conn], sections, section_filter)
-        except Exception as e:
-            logging.warning("Unable to collect info_metrics from a shard: {}".format(e))
-            continue
-        for k, v in kv_shard.items():
-            kv_overall[k] = kv_overall.get(k, 0) + v
+    _, _, kv_overall = collect_redis_metrics(
+        redis_conns, list(section_filter), section_filter, ignore_shard_errors=True
+    )
     return kv_overall
 
 
